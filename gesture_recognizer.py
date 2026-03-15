@@ -28,12 +28,14 @@ class GestureRecognizer:
         return fingers
 
     def detect_raw_gesture(self, fingers, landmarks):
-        # FIST — Hold 3sec = Lock/Unlock, tap = Play/Pause
+
+        # FIST — works locked and unlocked
         if fingers == [0, 0, 0, 0, 0]:
             now = time.time()
             if self.fist_hold_start is None:
                 self.fist_hold_start = now
             elif now - self.fist_hold_start >= self.FIST_HOLD_SECONDS:
+                # Hold 3 sec = Lock/Unlock
                 self.fist_hold_start = None
                 if self.system_locked:
                     self.system_locked = False
@@ -41,14 +43,17 @@ class GestureRecognizer:
                 else:
                     self.system_locked = True
                     return "LOCK"
-            # Only trigger play/pause if NOT locked
-            if not self.system_locked:
-                return "PLAY_PAUSE"
-            return None  # locked — ignore fist tap
+            else:
+                # Short fist = Play/Pause ONLY when unlocked
+                if not self.system_locked:
+                    return "PLAY_PAUSE"
+                else:
+                    return None  # locked — block fist tap
         else:
+            # Reset fist timer when hand changes
             self.fist_hold_start = None
 
-        # Block all other gestures when locked
+        # ── EVERYTHING BELOW BLOCKED WHEN LOCKED ──
         if self.system_locked:
             return None
 
@@ -92,12 +97,14 @@ class GestureRecognizer:
 
         raw = self.detect_raw_gesture(fingers, landmarks)
 
-        # Volume is continuous
+        # Volume is continuous — blocked when locked
         if raw is not None and isinstance(raw, tuple) and raw[0] == "VOLUME":
-            self.last_gesture = "VOLUME"
-            self.pending_gesture = None
-            self.gesture_hold_count = 0
-            return raw
+            if not self.system_locked:
+                self.last_gesture = "VOLUME"
+                self.pending_gesture = None
+                self.gesture_hold_count = 0
+                return raw
+            return None
 
         if raw is None:
             self.pending_gesture = None
@@ -105,6 +112,7 @@ class GestureRecognizer:
             self.last_gesture = None
             return None
 
+        # Hold gesture for HOLD_FRAMES before triggering
         if raw == self.pending_gesture:
             self.gesture_hold_count += 1
         else:

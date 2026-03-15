@@ -29,6 +29,15 @@ CURSOR_MODE = "CURSOR"
 current_mode = MEDIA_MODE
 mode_cooldown = 0
 
+# Cursor lock
+cursor_fist_start = None
+CURSOR_FIST_HOLD = 3
+cursor_locked = False
+
+# OK sign cooldown
+ok_hold_count = 0
+OK_HOLD_FRAMES = 8
+
 def get_finger_status(landmarks):
     if len(landmarks) < 21:
         return []
@@ -66,11 +75,6 @@ def is_ok_sign(landmarks, fingers):
         return dist < 40
     return False
 
-# Fist hold for cursor lock
-cursor_fist_start = None
-CURSOR_FIST_HOLD = 3
-cursor_locked = False
-
 while True:
     success, img = cap.read()
     if not success:
@@ -86,76 +90,27 @@ while True:
     if mode_cooldown > 0:
         mode_cooldown -= 1
 
-    # OK Sign — toggle mode
-    if is_ok_sign(landmarks, fingers) and mode_cooldown == 0:
-        if current_mode == MEDIA_MODE:
-            current_mode = CURSOR_MODE
-            cursor.reset_position()
-            cursor_locked = False
-        else:
-            current_mode = MEDIA_MODE
-        mode_cooldown = 40
-        status_text = f"Mode: {current_mode}"
-        status_timer = 40
-        gesture_history.appendleft(f"{current_mode} Mode")
-
-    # ── CURSOR MODE ──
-    if current_mode == CURSOR_MODE:
-        if len(fingers) == 5:
-
-            # Fist hold 3sec = Lock/Unlock cursor mode
-            if fingers == [0, 0, 0, 0, 0]:
-                now = time.time()
-                if cursor_fist_start is None:
-                    cursor_fist_start = now
-                elif now - cursor_fist_start >= CURSOR_FIST_HOLD:
-                    cursor_fist_start = None
-                    cursor_locked = not cursor_locked
-                    status_text = "Cursor LOCKED" if cursor_locked else "Cursor UNLOCKED"
-                    status_timer = 60
-                    gesture_history.appendleft("Cursor Locked" if cursor_locked else "Cursor Unlocked")
-            else:
-                cursor_fist_start = None
-
-            # Block cursor actions when locked
-            if not cursor_locked:
-
-                # Move cursor
-                if fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
-                    cursor.move_cursor(landmarks, img)
-                    status_text = "Moving Cursor"
-                    status_timer = 5
-
-                # Left click — thumb up
-                elif is_thumb_up(landmarks, fingers):
-                    if cursor.left_click():
-                        status_text = "Left Click!"
-                        status_timer = 20
-                        gesture_history.appendleft("Left Click")
-
-                # Right click — thumb down
-                elif is_thumb_down(landmarks, fingers):
-                    if cursor.right_click():
-                        status_text = "Right Click!"
-                        status_timer = 20
-                        gesture_history.appendleft("Right Click")
-
-                # Scroll — two fingers
-                elif fingers == [0, 1, 1, 0, 0]:
-                    if landmarks[8][2] < landmarks[12][2]:
-                        cursor.scroll_up()
-                        status_text = "Scroll Up"
-                    else:
-                        cursor.scroll_down()
-                        status_text = "Scroll Down"
-                    status_timer = 5
-
-        if len(landmarks) == 0:
-            cursor.reset_position()
-            cursor_fist_start = None
-
     # ── MEDIA MODE ──
-    else:
+    if current_mode == MEDIA_MODE:
+
+        # OK Sign toggle — ONLY when media unlocked
+        if not recognizer.system_locked:
+            if is_ok_sign(landmarks, fingers) and mode_cooldown == 0:
+                ok_hold_count += 1
+                if ok_hold_count >= OK_HOLD_FRAMES:
+                    current_mode = CURSOR_MODE
+                    cursor.reset_position()
+                    cursor_locked = False
+                    mode_cooldown = 40
+                    ok_hold_count = 0
+                    status_text = "Mode: CURSOR"
+                    status_timer = 40
+                    gesture_history.appendleft("CURSOR Mode")
+            else:
+                ok_hold_count = 0
+        else:
+            ok_hold_count = 0
+
         gesture = recognizer.recognize(landmarks)
         controller.update_cooldown()
 
@@ -233,6 +188,84 @@ while True:
             cv2.rectangle(img, (5, 105), (320, 138), (0,0,0), -1)
             cv2.putText(img, distance_warning, (10, 130),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.75, warn_color, 2)
+
+    # ── CURSOR MODE ──
+    else:
+        if status_timer > 0:
+            status_timer -= 1
+        else:
+            status_text = ""
+
+        # OK Sign toggle back — ONLY when cursor unlocked
+        if not cursor_locked:
+            if is_ok_sign(landmarks, fingers) and mode_cooldown == 0:
+                ok_hold_count += 1
+                if ok_hold_count >= OK_HOLD_FRAMES:
+                    current_mode = MEDIA_MODE
+                    mode_cooldown = 40
+                    ok_hold_count = 0
+                    status_text = "Mode: MEDIA"
+                    status_timer = 40
+                    gesture_history.appendleft("MEDIA Mode")
+            else:
+                ok_hold_count = 0
+        else:
+            ok_hold_count = 0
+
+        if len(fingers) == 5:
+
+            # Fist hold 3sec = Lock/Unlock cursor
+            if fingers == [0, 0, 0, 0, 0]:
+                now = time.time()
+                if cursor_fist_start is None:
+                    cursor_fist_start = now
+                elif now - cursor_fist_start >= CURSOR_FIST_HOLD:
+                    cursor_fist_start = None
+                    cursor_locked = not cursor_locked
+                    status_text = "Cursor LOCKED" if cursor_locked else "Cursor UNLOCKED"
+                    status_timer = 60
+                    gesture_history.appendleft("Cursor Locked" if cursor_locked else "Cursor Unlocked")
+            else:
+                cursor_fist_start = None
+
+            # Block ALL cursor gestures when locked
+            if not cursor_locked:
+
+                # Move cursor
+                if fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
+                    cursor.move_cursor(landmarks, img)
+                    status_text = "Moving Cursor"
+                    status_timer = 5
+
+                # Left click — thumb up
+                elif is_thumb_up(landmarks, fingers):
+                    if cursor.left_click():
+                        status_text = "Left Click!"
+                        status_timer = 20
+                        gesture_history.appendleft("Left Click")
+
+                # Right click — thumb down
+                elif is_thumb_down(landmarks, fingers):
+                    if cursor.right_click():
+                        status_text = "Right Click!"
+                        status_timer = 20
+                        gesture_history.appendleft("Right Click")
+
+                # Scroll — two fingers
+                elif fingers == [0, 1, 1, 0, 0]:
+                    if landmarks[8][2] < landmarks[12][2]:
+                        cursor.scroll_up()
+                        status_text = "Scroll Up"
+                    else:
+                        cursor.scroll_down()
+                        status_text = "Scroll Down"
+                    status_timer = 5
+
+        if len(landmarks) == 0:
+            cursor.reset_position()
+            cursor_fist_start = None
+
+    # ── UI ──
 
     # Mode indicator
     mode_color = (0, 255, 0) if current_mode == MEDIA_MODE else (255, 150, 0)
