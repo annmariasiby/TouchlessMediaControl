@@ -52,10 +52,6 @@ The system has two modes switchable with OK Sign 👌
 - Hands free media control
 - Public kiosks
 - Smart classrooms
-=======
-- pycaw
-- pyautogui
-- NumPy 
 
 ## Features
 - Real time hand detection at 30 FPS
@@ -64,8 +60,6 @@ The system has two modes switchable with OK Sign 👌
 - Gesture history display
 - Volume freeze feature
 
-## Applications
-- Hospitals and sterile environments
-- Hands free media control
+
 
 
