@@ -33,7 +33,6 @@ The system has two modes switchable with OK Sign 👌
 - Python 3.11
 - OpenCV
 - MediaPipe
-<<<<<<< HEAD
 - NumPy
 - pycaw
 - pyautogui
@@ -69,4 +68,4 @@ The system has two modes switchable with OK Sign 👌
 - Hospitals and sterile environments
 - Hands free media control
 
->>>>>>> ad418892a57e2f0f9fcf8c60a266f3eab617dd4e
+
