@@ -5,12 +5,14 @@ import time
 from hand_detector import HandDetector
 from gesture_recognizer import GestureRecognizer
 from media_controller import MediaController
+from cursor_controller import CursorController
 from collections import deque
 
 # Setup
 detector = HandDetector()
 recognizer = GestureRecognizer()
 controller = MediaController()
+cursor = CursorController()
 
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 840)
@@ -22,6 +24,53 @@ status_text = ""
 status_timer = 0
 gesture_history = deque(maxlen=4)
 
+MEDIA_MODE = "MEDIA"
+CURSOR_MODE = "CURSOR"
+current_mode = MEDIA_MODE
+mode_cooldown = 0
+
+def get_finger_status(landmarks):
+    if len(landmarks) < 21:
+        return []
+    fingers = []
+    if landmarks[4][1] < landmarks[3][1]:
+        fingers.append(1)
+    else:
+        fingers.append(0)
+    for tip, pip in [(8,6), (12,10), (16,14), (20,18)]:
+        if landmarks[tip][2] < landmarks[pip][2]:
+            fingers.append(1)
+        else:
+            fingers.append(0)
+    return fingers
+
+def is_thumb_up(landmarks, fingers):
+    if len(landmarks) < 21:
+        return False
+    return (fingers == [1, 0, 0, 0, 0] and
+            landmarks[4][2] < landmarks[0][2])
+
+def is_thumb_down(landmarks, fingers):
+    if len(landmarks) < 21:
+        return False
+    return (fingers == [1, 0, 0, 0, 0] and
+            landmarks[4][2] > landmarks[0][2])
+
+def is_ok_sign(landmarks, fingers):
+    if len(landmarks) < 21:
+        return False
+    if fingers == [0, 0, 1, 1, 1]:
+        thumb_x, thumb_y = landmarks[4][1], landmarks[4][2]
+        index_x, index_y = landmarks[8][1], landmarks[8][2]
+        dist = np.hypot(index_x - thumb_x, index_y - thumb_y)
+        return dist < 40
+    return False
+
+# Fist hold for cursor lock
+cursor_fist_start = None
+CURSOR_FIST_HOLD = 3
+cursor_locked = False
+
 while True:
     success, img = cap.read()
     if not success:
@@ -32,133 +81,214 @@ while True:
     img = detector.find_hands(img)
     landmarks = detector.get_landmarks(img)
 
-    gesture = recognizer.recognize(landmarks)
-    controller.update_cooldown()
+    fingers = get_finger_status(landmarks)
 
-    # Distance warning
-    distance_warning = ""
-    if len(landmarks) >= 21:
-        hand_size = np.hypot(
-            landmarks[0][1] - landmarks[9][1],
-            landmarks[0][2] - landmarks[9][2]
-        )
-        if hand_size < 80:
-            distance_warning = "Move Hand Closer!"
-        elif hand_size > 200:
-            distance_warning = "Move Hand Further!"
+    if mode_cooldown > 0:
+        mode_cooldown -= 1
+
+    # OK Sign — toggle mode
+    if is_ok_sign(landmarks, fingers) and mode_cooldown == 0:
+        if current_mode == MEDIA_MODE:
+            current_mode = CURSOR_MODE
+            cursor.reset_position()
+            cursor_locked = False
         else:
-            distance_warning = "Optimal Distance"
+            current_mode = MEDIA_MODE
+        mode_cooldown = 40
+        status_text = f"Mode: {current_mode}"
+        status_timer = 40
+        gesture_history.appendleft(f"{current_mode} Mode")
 
-    if status_timer > 0:
-        status_timer -= 1
+    # ── CURSOR MODE ──
+    if current_mode == CURSOR_MODE:
+        if len(fingers) == 5:
+
+            # Fist hold 3sec = Lock/Unlock cursor mode
+            if fingers == [0, 0, 0, 0, 0]:
+                now = time.time()
+                if cursor_fist_start is None:
+                    cursor_fist_start = now
+                elif now - cursor_fist_start >= CURSOR_FIST_HOLD:
+                    cursor_fist_start = None
+                    cursor_locked = not cursor_locked
+                    status_text = "Cursor LOCKED" if cursor_locked else "Cursor UNLOCKED"
+                    status_timer = 60
+                    gesture_history.appendleft("Cursor Locked" if cursor_locked else "Cursor Unlocked")
+            else:
+                cursor_fist_start = None
+
+            # Block cursor actions when locked
+            if not cursor_locked:
+
+                # Move cursor
+                if fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
+                    cursor.move_cursor(landmarks, img)
+                    status_text = "Moving Cursor"
+                    status_timer = 5
+
+                # Left click — thumb up
+                elif is_thumb_up(landmarks, fingers):
+                    if cursor.left_click():
+                        status_text = "Left Click!"
+                        status_timer = 20
+                        gesture_history.appendleft("Left Click")
+
+                # Right click — thumb down
+                elif is_thumb_down(landmarks, fingers):
+                    if cursor.right_click():
+                        status_text = "Right Click!"
+                        status_timer = 20
+                        gesture_history.appendleft("Right Click")
+
+                # Scroll — two fingers
+                elif fingers == [0, 1, 1, 0, 0]:
+                    if landmarks[8][2] < landmarks[12][2]:
+                        cursor.scroll_up()
+                        status_text = "Scroll Up"
+                    else:
+                        cursor.scroll_down()
+                        status_text = "Scroll Down"
+                    status_timer = 5
+
+        if len(landmarks) == 0:
+            cursor.reset_position()
+            cursor_fist_start = None
+
+    # ── MEDIA MODE ──
     else:
-        status_text = ""
+        gesture = recognizer.recognize(landmarks)
+        controller.update_cooldown()
 
-    # Handle gestures
-    if gesture == "LOCK":
-        status_text = "System LOCKED"
-        status_timer = 60
-        gesture_history.appendleft("Locked")
+        distance_warning = ""
+        if len(landmarks) >= 21:
+            hand_size = np.hypot(
+                landmarks[0][1] - landmarks[9][1],
+                landmarks[0][2] - landmarks[9][2]
+            )
+            if hand_size < 80:
+                distance_warning = "Move Hand Closer!"
+            elif hand_size > 200:
+                distance_warning = "Move Hand Further!"
+            else:
+                distance_warning = "Optimal Distance"
 
-    elif gesture == "UNLOCK":
-        status_text = "System UNLOCKED"
-        status_timer = 60
-        gesture_history.appendleft("Unlocked")
-
-    elif gesture == "PLAY_PAUSE":
-        controller.play_pause()
-        status_text = "Play / Pause"
-        status_timer = 40
-        gesture_history.appendleft("Play / Pause")
-
-    elif gesture == "MUTE":
-        controller.mute()
-        status_text = controller.last_action
-        status_timer = 40
-        gesture_history.appendleft(controller.last_action)
-
-    elif gesture == "NEXT":
-        controller.next_track()
-        status_text = ">> Next Track"
-        status_timer = 40
-        gesture_history.appendleft("Next Track")
-
-    elif gesture == "PREV":
-        controller.prev_track()
-        status_text = "<< Previous Track"
-        status_timer = 40
-        gesture_history.appendleft("Previous Track")
-
-    elif gesture == "SKIP_AD":
-        pyautogui.press('escape')
-        time.sleep(0.3)
-        pyautogui.moveTo(1232, 797, duration=0.2)
-        pyautogui.click()
-        status_text = "Ad Skipped!"
-        status_timer = 40
-        gesture_history.appendleft("Skip Ad")
-
-    elif gesture is not None and isinstance(gesture, tuple) and gesture[0] == "VOLUME":
-        # Only change volume at optimal distance
-        if distance_warning == "Optimal Distance":
-            vol_percent = controller.set_volume(gesture[1])
-            status_text = f"Volume: {vol_percent}%"
+        if status_timer > 0:
+            status_timer -= 1
         else:
-            status_text = f"Volume Frozen: {vol_percent}%"
-        status_timer = 10
+            status_text = ""
 
-        # Volume bar
-        bar_x, bar_y = 50, 180
-        bar_height = 300
-        fill = int(bar_height * vol_percent / 100)
-        bar_color = (0,255,0) if distance_warning == "Optimal Distance" else (0,165,255)
-        cv2.rectangle(img, (bar_x, bar_y), (bar_x+40, bar_y+bar_height), (200,200,200), 2)
-        cv2.rectangle(img, (bar_x, bar_y+bar_height-fill), (bar_x+40, bar_y+bar_height), bar_color, -1)
-        cv2.putText(img, f'{vol_percent}%', (bar_x-5, bar_y+bar_height+35),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, bar_color, 2)
+        if gesture == "LOCK":
+            status_text = "System LOCKED"
+            status_timer = 60
+            gesture_history.appendleft("Locked")
+
+        elif gesture == "UNLOCK":
+            status_text = "System UNLOCKED"
+            status_timer = 60
+            gesture_history.appendleft("Unlocked")
+
+        elif gesture == "PLAY_PAUSE":
+            controller.play_pause()
+            status_text = "Play / Pause"
+            status_timer = 40
+            gesture_history.appendleft("Play / Pause")
+
+        elif gesture == "MUTE":
+            controller.mute()
+            status_text = controller.last_action
+            status_timer = 40
+            gesture_history.appendleft(controller.last_action)
+
+        elif gesture == "NEXT":
+            controller.next_track()
+            status_text = ">> Next Track"
+            status_timer = 40
+            gesture_history.appendleft("Next Track")
+
+        elif gesture == "PREV":
+            controller.prev_track()
+            status_text = "<< Previous Track"
+            status_timer = 40
+            gesture_history.appendleft("Previous Track")
+
+        elif gesture is not None and isinstance(gesture, tuple) and gesture[0] == "VOLUME":
+            if distance_warning == "Optimal Distance":
+                vol_percent = controller.set_volume(gesture[1])
+                status_text = f"Volume: {vol_percent}%"
+            else:
+                status_text = f"Volume Frozen: {vol_percent}%"
+            status_timer = 10
+
+            bar_x, bar_y = 50, 180
+            bar_height = 300
+            fill = int(bar_height * vol_percent / 100)
+            bar_color = (0,255,0) if distance_warning == "Optimal Distance" else (0,165,255)
+            cv2.rectangle(img, (bar_x, bar_y), (bar_x+40, bar_y+bar_height), (200,200,200), 2)
+            cv2.rectangle(img, (bar_x, bar_y+bar_height-fill), (bar_x+40, bar_y+bar_height), bar_color, -1)
+            cv2.putText(img, f'{vol_percent}%', (bar_x-5, bar_y+bar_height+35),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, bar_color, 2)
+
+        if distance_warning:
+            warn_color = (0,255,0) if distance_warning == "Optimal Distance" else (0,165,255)
+            cv2.rectangle(img, (5, 105), (320, 138), (0,0,0), -1)
+            cv2.putText(img, distance_warning, (10, 130),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, warn_color, 2)
+
+    # Mode indicator
+    mode_color = (0, 255, 0) if current_mode == MEDIA_MODE else (255, 150, 0)
+    cv2.rectangle(img, (img.shape[1]//2 - 90, 5), (img.shape[1]//2 + 90, 40), (0,0,0), -1)
+    cv2.putText(img, f"MODE: {current_mode}", (img.shape[1]//2 - 75, 32),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, mode_color, 2)
 
     # Lock indicator
-    lock_text = "LOCKED" if recognizer.system_locked else "UNLOCKED"
-    lock_color = (0, 0, 255) if recognizer.system_locked else (0, 255, 0)
-    cv2.rectangle(img, (img.shape[1]//2 - 80, 5), (img.shape[1]//2 + 80, 40), (0,0,0), -1)
-    cv2.putText(img, lock_text, (img.shape[1]//2 - 65, 32),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, lock_color, 2)
+    if current_mode == MEDIA_MODE:
+        lock_text = "LOCKED" if recognizer.system_locked else "UNLOCKED"
+        lock_color = (0, 0, 255) if recognizer.system_locked else (0, 255, 0)
+    else:
+        lock_text = "LOCKED" if cursor_locked else "UNLOCKED"
+        lock_color = (0, 0, 255) if cursor_locked else (0, 255, 0)
+    cv2.rectangle(img, (img.shape[1]//2 - 80, 42), (img.shape[1]//2 + 80, 70), (0,0,0), -1)
+    cv2.putText(img, lock_text, (img.shape[1]//2 - 65, 65),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, lock_color, 2)
 
     # Status text
     if status_text:
-        text_size = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 1.4, 3)[0]
-        cv2.rectangle(img, (5, 48), (text_size[0] + 25, 100), (0,0,0), -1)
-        cv2.putText(img, status_text, (10, 90),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0,255,255), 3)
-
-    # Distance warning
-    if distance_warning:
-        warn_color = (0,255,0) if distance_warning == "Optimal Distance" else (0,165,255)
-        cv2.rectangle(img, (5, 105), (320, 138), (0,0,0), -1)
-        cv2.putText(img, distance_warning, (10, 130),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, warn_color, 2)
+        text_size = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)[0]
+        cv2.rectangle(img, (5, 75), (text_size[0] + 25, 118), (0,0,0), -1)
+        cv2.putText(img, status_text, (10, 110),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0,255,255), 3)
 
     # Gesture guide
-    guide = [
-        "Thumb+Index  = Volume",
-        "Fist         = Play/Pause",
-        "Open Palm    = Mute",
-        "1 Finger     = Previous",
-        "2 Fingers    = Next",
-        "3 Fingers    = Skip Ad",
-        "Thumbs Up    = Unlock",
-        "OK Sign      = Lock",
-    ]
+    if current_mode == MEDIA_MODE:
+        guide = [
+            "Thumb+Index  = Volume",
+            "Fist         = Play/Pause",
+            "Fist 3sec    = Lock/Unlock",
+            "Open Palm    = Mute",
+            "1 Finger     = Previous",
+            "2 Fingers    = Next",
+            "OK Sign      = Cursor Mode",
+        ]
+    else:
+        guide = [
+            "1 Finger     = Move Cursor",
+            "Thumb Up     = Left Click",
+            "Thumb Down   = Right Click",
+            "2 Fingers    = Scroll Up/Down",
+            "Fist 3sec    = Lock/Unlock",
+            "OK Sign      = Media Mode",
+        ]
+
     box_x = img.shape[1] - 320
     box_y = 45
     box_w = 310
-    box_h = len(guide) * 30 + 15
+    box_h = len(guide) * 28 + 15
     overlay = img.copy()
     cv2.rectangle(overlay, (box_x, box_y), (box_x+box_w, box_y+box_h), (0,0,0), -1)
     cv2.addWeighted(overlay, 0.55, img, 0.45, 0, img)
     for i, text in enumerate(guide):
-        cv2.putText(img, text, (box_x+10, box_y+26+i*30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255,255,255), 1)
+        cv2.putText(img, text, (box_x+10, box_y+24+i*28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,255,255), 1)
 
     # Gesture history
     cv2.rectangle(img, (5, img.shape[0]-170), (240, img.shape[0]-40), (0,0,0), -1)

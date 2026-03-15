@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 class GestureRecognizer:
     def __init__(self):
@@ -8,49 +9,48 @@ class GestureRecognizer:
         self.pending_gesture = None
         self.HOLD_FRAMES = 8
         self.system_locked = False
+        self.fist_hold_start = None
+        self.FIST_HOLD_SECONDS = 3
 
     def get_finger_status(self, landmarks):
         if len(landmarks) < 21:
             return []
-
         fingers = []
-
-        # Thumb
         if landmarks[4][1] < landmarks[3][1]:
             fingers.append(1)
         else:
             fingers.append(0)
-
-        # 4 Fingers
         for tip, pip in [(8,6), (12,10), (16,14), (20,18)]:
             if landmarks[tip][2] < landmarks[pip][2]:
                 fingers.append(1)
             else:
                 fingers.append(0)
-
         return fingers
 
     def detect_raw_gesture(self, fingers, landmarks):
+        # FIST — Hold 3sec = Lock/Unlock, tap = Play/Pause
+        if fingers == [0, 0, 0, 0, 0]:
+            now = time.time()
+            if self.fist_hold_start is None:
+                self.fist_hold_start = now
+            elif now - self.fist_hold_start >= self.FIST_HOLD_SECONDS:
+                self.fist_hold_start = None
+                if self.system_locked:
+                    self.system_locked = False
+                    return "UNLOCK"
+                else:
+                    self.system_locked = True
+                    return "LOCK"
+            # Only trigger play/pause if NOT locked
+            if not self.system_locked:
+                return "PLAY_PAUSE"
+            return None  # locked — ignore fist tap
+        else:
+            self.fist_hold_start = None
 
-        # THUMBS UP - Unlock
-        if fingers == [1, 0, 0, 0, 0]:
-            return "UNLOCK"
-
-        # OK SIGN - Lock (thumb + index touching, others up)
-        if fingers == [0, 0, 1, 1, 1]:
-            thumb_x, thumb_y = landmarks[4][1], landmarks[4][2]
-            index_x, index_y = landmarks[8][1], landmarks[8][2]
-            distance = np.hypot(index_x - thumb_x, index_y - thumb_y)
-            if distance < 40:
-                return "LOCK"
-
-        # If system locked block all gestures
+        # Block all other gestures when locked
         if self.system_locked:
             return None
-
-        # FIST - Play/Pause
-        if fingers == [0, 0, 0, 0, 0]:
-            return "PLAY_PAUSE"
 
         # OPEN PALM - Mute
         if fingers == [1, 1, 1, 1, 1]:
@@ -63,10 +63,6 @@ class GestureRecognizer:
         # TWO FINGERS - Next
         if fingers == [0, 1, 1, 0, 0]:
             return "NEXT"
-
-        # THREE FINGERS - Skip Ad
-        if fingers == [0, 1, 1, 1, 0]:
-            return "SKIP_AD"
 
         # VOLUME - Thumb + Index only
         if fingers == [1, 1, 0, 0, 0]:
@@ -83,6 +79,7 @@ class GestureRecognizer:
             self.gesture_cooldown = 0
             self.gesture_hold_count = 0
             self.pending_gesture = None
+            self.fist_hold_start = None
             return None
 
         if self.gesture_cooldown > 0:
@@ -108,7 +105,6 @@ class GestureRecognizer:
             self.last_gesture = None
             return None
 
-        # Hold gesture for HOLD_FRAMES before triggering
         if raw == self.pending_gesture:
             self.gesture_hold_count += 1
         else:
@@ -117,11 +113,6 @@ class GestureRecognizer:
 
         if self.gesture_hold_count >= self.HOLD_FRAMES:
             if raw != self.last_gesture:
-                if raw == "LOCK":
-                    self.system_locked = True
-                elif raw == "UNLOCK":
-                    self.system_locked = False
-
                 self.last_gesture = raw
                 self.gesture_hold_count = 0
                 self.gesture_cooldown = 30

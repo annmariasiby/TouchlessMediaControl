@@ -7,24 +7,37 @@
 OVERVIEW
 ----------------------------------------------------------------
 A real-time hand gesture recognition system that allows users
-to control media playback without touching any device. Uses
-laptop webcam to detect hand gestures and converts them into
-media control commands.
+to control media playback and computer cursor without touching
+any device. Uses laptop webcam to detect hand gestures and
+converts them into commands.
 
 ----------------------------------------------------------------
-GESTURES
+TWO MODES
 ----------------------------------------------------------------
+Switch between modes using OK Sign 👌
 
-   Gesture            Action
-   --------           --------
-   OK Sign         =  Lock System
-   Thumbs Up       =  Unlock System
-   Closed Fist     =  Play / Pause
-   Open Palm       =  Mute / Unmute
-   1 Finger Up     =  Previous Track
-   2 Fingers Up    =  Next Track
-   Thumb + Index   =  Volume Control
-   3 Fingers Up    =  Skip Ad(YouTube)
+MEDIA MODE
+----------
+   Gesture               Action
+   --------              --------
+   Thumb + Index      =  Volume Control
+   Fist               =  Play / Pause
+   Fist Hold 3 sec    =  Lock / Unlock
+   Open Palm          =  Mute / Unmute
+   1 Finger Up        =  Previous Track
+   2 Fingers Up       =  Next Track
+   OK Sign            =  Switch to Cursor Mode
+
+CURSOR MODE
+-----------
+   Gesture               Action
+   --------              --------
+   Index Finger       =  Move Cursor
+   Thumb Up           =  Left Click
+   Thumb Down         =  Right Click
+   2 Fingers Tilt     =  Scroll Up / Down
+   Fist Hold 3 sec    =  Lock / Unlock
+   OK Sign            =  Switch to Media Mode
 
 ----------------------------------------------------------------
 HOW IT WORKS
@@ -34,7 +47,7 @@ HOW IT WORKS
 3. MediaPipe detects 21 hand landmark points
 4. Finger positions are analyzed
 5. Gesture is recognized
-6. System executes media control command
+6. System executes media or cursor command
 
 ----------------------------------------------------------------
 TECHNOLOGIES USED
@@ -44,7 +57,7 @@ TECHNOLOGIES USED
 * MediaPipe     - Hand detection and tracking
 * NumPy         - Mathematical calculations
 * Pycaw         - System volume control
-* PyAutoGUI     - Keyboard media commands
+* PyAutoGUI     - Media and cursor control
 
 ----------------------------------------------------------------
 FILES
@@ -53,7 +66,19 @@ FILES
 * hand_detector.py      - Hand detection module
 * gesture_recognizer.py - Gesture recognition module
 * media_controller.py   - Media control module
+* cursor_controller.py  - Cursor control module
 * README.txt            - This file
+
+----------------------------------------------------------------
+FEATURES
+----------------------------------------------------------------
+* Real time hand detection at 30 FPS
+* Two mode system — Media and Cursor
+* Gesture lock and unlock in both modes
+* Distance warning system
+* Gesture history display
+* Volume freeze feature
+* Smooth cursor with click cooldown
 
 ----------------------------------------------------------------
 APPLICATIONS
@@ -75,6 +100,6 @@ FUTURE IMPROVEMENTS
 * Multi hand gesture support
 * Voice and gesture hybrid control
 * Smart home device integration
-* Custom gesture training
+* Mood based music using facial emotion detection
 
 ================================================================
