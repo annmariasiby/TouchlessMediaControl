@@ -23,6 +23,7 @@ media playback without touching any device.
 - MediaPipe
 - pycaw
 - pyautogui
+- NumPy 
 
 ## Features
 - Real time hand detection at 30 FPS
