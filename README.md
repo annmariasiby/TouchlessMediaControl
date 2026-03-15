@@ -34,4 +34,4 @@ media playback without touching any device.
 ## Applications
 - Hospitals and sterile environments
 - Hands free media control
-- Public kiosks
+
