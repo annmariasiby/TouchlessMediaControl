@@ -1,7 +1,7 @@
 # Touchless Media Control System
 ### Using Hand Gesture Recognition
 
-Real-time hand gesture recognition system that controls media 
+Real-time hand gesture recognition system that controls media
 playback and computer cursor without touching any device.
 
 ## Modes
@@ -51,11 +51,3 @@ The system has two modes switchable with OK Sign 👌
 - Accessibility for people with disabilities
 - Hands free media control
 - Smart classrooms
-
-
-## Features
-- Real time hand detection at 30 FPS
-- Gesture lock and unlock system
-- Distance warning system
-- Gesture history display
-- Volume freeze feature
