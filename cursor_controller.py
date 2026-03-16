@@ -64,10 +64,10 @@ class CursorController:
         return False
 
     def scroll_up(self):
-        pyautogui.scroll(10)  # increased scroll speed
+        pyautogui.scroll(10)
 
     def scroll_down(self):
-        pyautogui.scroll(-10)  # increased scroll speed
+        pyautogui.scroll(-10)
 
     def reset_position(self):
         self.prev_x = 0

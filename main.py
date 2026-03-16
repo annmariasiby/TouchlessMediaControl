@@ -29,12 +29,10 @@ CURSOR_MODE = "CURSOR"
 current_mode = MEDIA_MODE
 mode_cooldown = 0
 
-# Cursor lock
 cursor_fist_start = None
 CURSOR_FIST_HOLD = 3
 cursor_locked = False
 
-# OK sign cooldown
 ok_hold_count = 0
 OK_HOLD_FRAMES = 8
 
@@ -56,14 +54,22 @@ def get_finger_status(landmarks):
 def is_thumb_up(landmarks, fingers):
     if len(landmarks) < 21:
         return False
-    return (fingers == [1, 0, 0, 0, 0] and
-            landmarks[4][2] < landmarks[0][2])
+    if fingers != [1, 0, 0, 0, 0]:
+        return False
+    thumb_tip_y = landmarks[4][2]
+    wrist_y = landmarks[0][2]
+    middle_y = landmarks[9][2]
+    return thumb_tip_y < wrist_y - 30 and thumb_tip_y < middle_y
 
 def is_thumb_down(landmarks, fingers):
     if len(landmarks) < 21:
         return False
-    return (fingers == [1, 0, 0, 0, 0] and
-            landmarks[4][2] > landmarks[0][2])
+    if fingers != [1, 0, 0, 0, 0]:
+        return False
+    thumb_tip_y = landmarks[4][2]
+    wrist_y = landmarks[0][2]
+    middle_y = landmarks[9][2]
+    return thumb_tip_y > wrist_y + 30 and thumb_tip_y > middle_y
 
 def is_ok_sign(landmarks, fingers):
     if len(landmarks) < 21:
@@ -231,7 +237,7 @@ while True:
             # Block ALL cursor gestures when locked
             if not cursor_locked:
 
-                # Move cursor
+                # Move cursor — index finger
                 if fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
                     cursor.move_cursor(landmarks, img)
                     status_text = "Moving Cursor"
